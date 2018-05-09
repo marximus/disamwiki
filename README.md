@@ -14,9 +14,6 @@ To install mwlib:
 To install requests:
 	sudo pip install requests
 
-To run the program:
-    python main.py [args]
-
 # Usage
 python main.py [--num-levels] [--num-disambig-links] [--num-page-links] [--overwrite] disambiguation-term
 
