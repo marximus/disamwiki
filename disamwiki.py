@@ -255,7 +255,7 @@ def _wikirequest(params):
     global USER_AGENT
     global API_URL
 
-    headers = {'USER_AGENT': USER_AGENT}
+    headers = {'User-Agent': USER_AGENT}
     params['format'] = 'json'
 
     result = requests.get(API_URL, params=params, headers=headers)
