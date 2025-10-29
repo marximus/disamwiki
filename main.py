@@ -1,14 +1,12 @@
 # main.py
 #
-from __future__ import print_function
-from __future__ import division
 from collections import defaultdict
-import os.path
+from pathlib import Path
 import argparse
 import time
 import sys
 import threading
-import Queue
+import queue
 import disamwiki
 
 
@@ -76,7 +74,7 @@ class Requests(threading.Thread):
             if parent is not None:
                 st_article = {a.get_search_title(): a for a in articles}
                 searchtitles = dict(simpletitles, **titlesection)
-                for searchtitle, linknamelist in searchtitles.iteritems():
+                for searchtitle, linknamelist in searchtitles.items():
                     article = st_article[searchtitle]   # the article that was requested by titles in linknamelist
                     article.set_parent(parent)
                     parent.add_children(article, linknamelist)
@@ -118,7 +116,7 @@ def chunks(l, n):
 
 def print_and_flush(string):
     """ Print string to stdout and then immediately flush the stdout stream. """
-    sys.stdout.write(string.encode('utf-8'))
+    sys.stdout.write(string)
     sys.stdout.flush()
 
 
@@ -149,56 +147,52 @@ def write_files(article, overwrite=False, path=None):
     # Write root article to file
     if article.parent is None:
         title = article.get_title().replace(" ", "_").replace('/', '-')
-        foldername = title
-        filename = u'{}/{}.txt'.format(foldername, title)
+        foldername = Path(title)
+        filename = foldername / f'{title}.txt'
         # If file exists and overwrite is False raise FileExistsErr
-        if overwrite is False and os.path.isfile(filename):
-            raise FileExistsErr(filename)
+        if overwrite is False and filename.exists():
+            raise FileExistsErr(str(filename))
         # Create folder if it doesn't exist
-        if os.path.isdir(foldername) is False:
-            os.mkdir(foldername)
+        foldername.mkdir(parents=True, exist_ok=True)
         # Write file
-        file = open(filename, 'w')
-        file.write(article.get_plaintext().encode('utf-8'))
-        file.close()
+        with open(filename, 'w', encoding='utf-8') as file:
+            file.write(article.get_plaintext())
         # Set the path.
-        path = article.get_title().replace(" ", "_").replace('/', '-')
+        path = Path(article.get_title().replace(" ", "_").replace('/', '-'))
 
     # Each article will be placed in a folder titled by the link name that linked the article. The contents of the article
     # are placed in this folder with a *.txt file of the article's contents. The *.txt file is named after the actual
     # article title as it appears on Wikipedia. If the same link appeared multiple times in an article, each folder
     # other than the first will be named linkname_i, where i is 2, 3, etc.
-    for linkname, children in article.get_children().iteritems():
+    for linkname, children in article.get_children().items():
         normlinkname = linkname.replace(" ", "_").replace('/', '-')
 
         for i in range(len(children)):
             # Set the name of the folder
             if i == 0:      # first article linked by linkname
-                foldername = u'{}/{}'.format(path, normlinkname)
+                foldername = path / normlinkname
             else:           # all other article linked by linkname
-                foldername = u'{}/{}_{}'.format(path, normlinkname, i+1)
+                foldername = path / f'{normlinkname}_{i+1}'
 
             # Set filename. If the article was found, the filename will be the title, otherwise it will be the searched title
             if children[i].missing():
                 title = children[i].get_search_title().replace(" ", "_").replace('/', '-')
             else:
                 title = children[i].get_title().replace(" ", "_").replace('/', '-')
-            filename = u'{}/{}.txt'.format(foldername, title)
+            filename = foldername / f'{title}.txt'
 
             # Create folder if it doesn't exist
-            if os.path.isdir(foldername) is False:
-                os.mkdir(foldername)
+            foldername.mkdir(parents=True, exist_ok=True)
             # If file exists and overwrite is False raise FileExistsErr
-            if overwrite is False and os.path.isfile(filename):
-                raise FileExistsErr(filename)
+            if overwrite is False and filename.exists():
+                raise FileExistsErr(str(filename))
 
             # Write file. If the article was never found, the file will say "DOES NOT EXIST"
-            file = open(filename, 'w')
-            if children[i].missing():
-                file.write(u'DOES NOT EXIST')
-            else:
-                file.write(children[i].get_plaintext().encode('utf-8'))
-            file.close()
+            with open(filename, 'w', encoding='utf-8') as file:
+                if children[i].missing():
+                    file.write('DOES NOT EXIST')
+                else:
+                    file.write(children[i].get_plaintext())
 
             write_files(children[i], overwrite=overwrite, path=foldername)
 
@@ -216,7 +210,7 @@ def draw_article_tree(articlelist):
             titleToArticles[title] = [article]
 
     D = pgv.AGraph(strict=False, directed=True)
-    dups = {title: artlist for (title, artlist) in titleToArticles.iteritems() if len(artlist) > 1}
+    dups = {title: artlist for (title, artlist) in titleToArticles.items() if len(artlist) > 1}
 
 
     # Set nodes for articles with more than one incoming link to be orange and put them in graph.
@@ -285,8 +279,8 @@ def check_int(value):
     return ivalue
 
 
-if __name__ == '__main__':
-
+def main():
+    """Main entry point for the disamwiki application."""
     # Parse the command line
     inputparser = argparse.ArgumentParser(description='Get Wikipedia disambiguation page data.')
     inputparser.add_argument('term', type=str, help='name of disambiguation page')
@@ -307,8 +301,8 @@ if __name__ == '__main__':
     NUM_LINKS = [args.num_disambig_links] + [args.num_page_links] * (MAX_LEVEL-1)
     OVERWRITE_FILES = args.overwrite
 
-    requests_input_queue = Queue.Queue()
-    requests_output_queue = Queue.Queue()
+    requests_input_queue = queue.Queue()
+    requests_output_queue = queue.Queue()
 
     request_threads = 15
 
@@ -346,7 +340,7 @@ if __name__ == '__main__':
                 numpagessent += numlinks
 
             recievedarticles.append(article)
-        except Queue.Empty:  # exception will be raised when get call times out
+        except queue.Empty:  # exception will be raised when get call times out
             # Wait for all current threads to finish
             requests_input_queue.join()
 
@@ -376,3 +370,6 @@ if __name__ == '__main__':
         except FileExistsErr as e:
             print_and_flush('File exists: {}\n'.format(e.filename))
 
+
+if __name__ == '__main__':
+    main()

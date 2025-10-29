@@ -4,13 +4,12 @@
 # Use Wikipedia to get ambiguous content
 
 
-from __future__ import print_function
 from collections import defaultdict
 import requests
 from mwlib import parser, uparser
 
 
-API_URL = 'http://en.wikipedia.org/w/api.php'
+API_URL = 'https://en.wikipedia.org/w/api.php'
 USER_AGENT = 'DisambigWiki (www.utk.edu)'
 
 
