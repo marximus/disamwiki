@@ -6,7 +6,7 @@
 
 from collections import defaultdict
 import requests
-from mwlib import parser, uparser
+import mwparserfromhell
 
 
 API_URL = 'https://en.wikipedia.org/w/api.php'
@@ -41,10 +41,10 @@ class Article:
         if self.missing():
             return
 
-        self.parsetree = uparser.parseString(title=self.title, raw=self.wikitext)
+        self.parsetree = mwparserfromhell.parse(self.wikitext)
 
         text, links = get_text_and_links(self.parsetree, self.ignoreSections)
-        plaintext = u''.join(text)
+        plaintext = ''.join(text)
         # Remove newlines and spaces that occur at beginning of text
         self.plaintext = plaintext.lstrip(' \n')
         self.links = links
@@ -263,49 +263,56 @@ def _wikirequest(params):
     return result.json()
 
 
-ignoreTypes = (parser.Table, parser.ImageLink, parser.CategoryLink, parser.NamespaceLink, parser.TagNode)
-def get_text_and_links(node, ignoreSections=None, text=None, links=None):
-    """ Extract the text and links from the parsetree that has node as root. This function modifies the
-    input parse tree. The links are returned as a tuple (linkname, linktarget), where linkname is how the
-    link appeared in the article and linktarget is that target article of the link.
+def get_text_and_links(wikicode, ignoreSections=None):
+    """ Extract the text and links from parsed wikicode. The links are returned as a tuple
+    (linkname, linktarget), where linkname is how the link appeared in the article and
+    linktarget is the target article of the link.
 
-    node: root of parsetree
-    ignoreSections: sections to ignore when extracting from the parsetree
+    wikicode: mwparserfromhell.Wikicode object (parsed wikitext)
+    ignoreSections: iterable of section titles to ignore when extracting
+
+    Returns:
+        text: list of text strings
+        links: list of (linkname, linktarget) tuples
     """
-    if text is None:
-        text = []
-    if links is None:
-        links = []
+    if ignoreSections is None:
+        ignoreSections = []
 
-    if type(node) is parser.Text:
-        text.append(node.asText())
-    elif type(node) is parser.Section:
-        # The first element in children contains the caption of the section as a Node
-        # instance with 0 or more children. Subsequent children are elements following
-        # the section heading.
-        headingNode = node.children.pop(0)
-        sectiontitle = headingNode.asText()
-        equalsign = '=' * node.level
-        text.append(u'{} {} {}'.format(equalsign, sectiontitle, equalsign))
-        # If the section is to be ignored, remove all of the section's children an insert a newline into the text
-        if sectiontitle in ignoreSections:
+    text = []
+    links = []
+
+    # Get all sections (first section is the intro, has no heading)
+    sections = wikicode.get_sections(include_headings=True)
+
+    for section in sections:
+        # Check if this section should be ignored
+        headings = section.filter_headings()
+
+        if headings:
+            # This section has a heading
+            heading = headings[0]
+            section_title = str(heading.title).strip()
+
+            # Add the section heading to text
+            level = len(str(heading).split(section_title)[0])  # Count '=' signs
+            text.append(f"{'=' * level} {section_title} {'=' * level}")
             text.append('\n')
-            node.children = []
-    elif type(node) is parser.ArticleLink:
-        # Article link has style [[target]] in wikitext
-        if len(node.children) == 0:
-            text.append(node.target)
-            links.append((node.target, node.target))
-        else:
-            linkname = u''
-            for c in node.allchildren():
-                if isinstance(c, parser.Text):
-                    linkname += c.asText()
-            links.append((linkname, node.target))
-            # links.append((node.asText(), node.target))
 
-    if type(node) not in ignoreTypes:
-        for child in node.children:
-            get_text_and_links(child, ignoreSections, text, links)
+            # If section should be ignored, skip its content
+            if section_title in ignoreSections:
+                continue
+
+        # Extract links from this section
+        # Only extract wikilinks (internal Wikipedia links), not external links
+        for link in section.filter_wikilinks():
+            target = str(link.title).strip()
+            # Display text is either the custom text or the target
+            # link.text is None if no custom display text (e.g., [[Article]])
+            display = str(link.text).strip() if link.text else target
+            links.append((display, target))
+
+        # Extract plain text from this section
+        section_text = section.strip_code()
+        text.append(section_text)
 
     return text, links
