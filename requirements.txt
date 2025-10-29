@@ -1,6 +1,6 @@
 # Core dependencies
 requests>=2.31.0
-mwlib>=0.15.15
+mwparserfromhell>=0.6.6
 
 # Optional: For graph visualization
 # pygraphviz>=1.11
